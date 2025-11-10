@@ -10,6 +10,7 @@ import pandas as pd
 import os, pickle, glob
 import argparse
 import sys
+import argparse
 
 from top_transformer import TopTForImageClassification
 from top_transformer import TopTForPreTraining
@@ -60,7 +61,7 @@ def get_predictions(
 
     # optional, metric
     # metrics_func(result_dict['predict'], result_dict['true'])
-    return None
+    return result_dict
 
 
 def main_get_predictions_for_scoring():
@@ -88,28 +89,6 @@ def main_get_predictions_for_scoring():
             model_path=model_p,
             save_path=save_path,
         )
-    
-
-    # # get training predictions
-    # top_feature_file = r'/home/chendo11/workfolder/TopTransformer/TopFeatures_Data/all_feature_ele_scheme_1-lap0_rips_12-6channel-212-filtration50.npy'
-    # test_label_file = r'/home/chendo11/workfolder/TopTransformer/TopFeatures_Data/downstream_task_labels/CASF2007_refine_train_label.csv'
-    # scaler_path = r'/home/chendo11/workfolder/TopTransformer/code_pkg/pretrain_data_standard_minmax_6channel_filtration50-12.sav'
-    # model_pathes = glob.glob(r'/home/chendo11/workfolder/TopTransformer/Output_dir/finetune_for_regression_CASF2007_filtration50_212_12/selected_global_para_32_0.00008_from_3w/model_cls_32_0.00008_*')
-    # for i, model_p in enumerate(model_pathes):
-    #     print(i, model_p)
-    #     if not os.path.exists(os.path.join(model_p, 'all_results.json')):
-    #         continue
-
-    #     save_path = rf'/home/chendo11/workfolder/TopTransformer/Data_for_different_tasks/Scoring_power/train_set_predictions/casf_2007_trainset_212_50/model_para_32_0.00008_{i}.npy'
-
-    #     get_predictions(
-    #         top_feature_array=get_top_feature_from_dict(top_feature_file, test_label_file),
-    #         test_label_file=test_label_file,
-    #         scaler_path=scaler_path,
-    #         model_path=model_p,
-    #         save_path=save_path,
-    #     )
-
 
     return None
 
@@ -121,16 +100,24 @@ def main_get_predictions_for_scoring_2020():
         top_feature_array = [np.float32(top_feature_dict[key]) for key in label_df.index.tolist()]
         return top_feature_array
 
-    top_feature_file = r'TopTransformer/TopFeatures_Data/all_feature_ele_scheme_1-lap0_rips_20-6channel-10.npy'
-    test_label_file = r'/home/chendo11/workfolder/TopTransformer/TopFeatures_Data/downstream_task_labels/CASF2016_core_test_label.csv'
-    scaler_path = r'/home/chendo11/workfolder/TopTransformer/code_pkg/pretrain_data_standard_minmax_6channel_large.sav'
-    model_pathes = glob.glob(r'/home/chendo11/workfolder/TopTransformer/Output_dir/finetune_for_regression_v2020_012_20/selected_global_para_64_0.00008_from_3w/model_cls_*')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--feature_file', type=str, default='crystal_feats.npy', help='Input feature file path')
+    parser.add_argument('--label_file', type=str, default='labels.csv', help='Input test set labels filepath')
+    parser.add_argument('--scaler_file', type=str, default='code_pkg/pretrain_data_standard_minmax_6channel_large.sav', help='Scaler path')
+    parser.add_argument('--model_paths', type=str, default='saved_model_last_4w', help='Model directory path')
+    parser.add_argument('--outdir', type=str, default='preds', help='Directory path for storing output predictions')
+    args = parser.parse_args()
+    
+    top_feature_file = args.feature_file
+    test_label_file = args.label_file
+    scaler_path = args.scaler_file
+    model_pathes = glob.glob(args.model_paths)
     for i, model_p in enumerate(model_pathes):
         print(i, model_p)
         if not os.path.exists(os.path.join(model_p, 'all_results.json')):
             continue
 
-        save_path = rf'/home/chendo11/workfolder/TopTransformer/Output_dir/for_consensus_predict_deep_result_20times/scoring_casf2016_from_v2020trained_model/model_para_32_0.00008_{i}.npy'
+        save_path = os.path.join(args.outdir, f'model_{i}.npy')
 
         get_predictions(
             top_feature_array=get_top_feature_from_dict(top_feature_file, test_label_file),
@@ -142,53 +129,65 @@ def main_get_predictions_for_scoring_2020():
     return None
 
 
-def main_get_predictions_for_docking():
+def get_predictions_for_docking(feature_dir, scaler_path, model_dir, label_file, out_dir):
     
-    feature_folder = r'/home/chendo11/workfolder/TopTransformer/TopFeatures_Data/for-CASF-200713-dock-features-212-12'
-    scaler_path = r'/home/chendo11/workfolder/TopTransformer/code_pkg/pretrain_data_standard_minmax_6channel_filtration50-12.sav'
-    label_folder = r'/home/chendo11/workfolder/TopTransformer/TopFeatures_Data/for-CASF-200713-dock-labels'
-    all_model_folder = r'/home/chendo11/workfolder/TopTransformer/Output_dir/finetune_for_docking_all_train'
-
-    # # label 2007
-    # target_label_files = [ll for ll in glob.glob(os.path.join(label_folder, '*.csv')) if '.rms_' in ll]
-    # save_folder = r'/home/chendo11/workfolder/TopTransformer/Data_for_different_tasks/Docking_power/final_casf2007_results'
+    os.makedirs(out_dir, exist_ok=True)
     
-    # label 2013
-    target_label_files = [ll for ll in glob.glob(os.path.join(label_folder, '*.csv')) if '_rmsd.dat' in ll]
-    save_folder = r'/home/chendo11/workfolder/TopTransformer/Data_for_different_tasks/Docking_power/final_casf2013_results'
+    label_df = pd.read_csv(label_file, header=0, index_col=0)
+    ids = label_df.index.tolist()
 
+    # concatenating input data for individual structures into single, 4D array
+    features = []
+    for sample_id in ids:
+        npy_path = os.path.join(feature_dir, f'{sample_id}.npy')
+        if not os.path.exists(npy_path):
+            raise FileNotFoundError(f'Missing feature file for ID "{sample_id}": {npy_path}')
 
+        arr = np.load(npy_path, allow_pickle=True)
+        if arr.ndim != 3:
+            raise ValueError(f'Feature file {npy_path} has incorrect shape {arr.shape}.'
+                            f'Expected shape (6, X, 143).')
+        
+        arr = arr[:,0::2, :]
+        features.append(arr.astype('float32'))
+    
     # get docking predicted result for all
-    for i, label_f in enumerate(target_label_files):
-        print(i, label_f)
+    top_feature_array = np.stack(features, axis=0)
 
-        # prepare the input data
-        data_name = os.path.split(label_f)[-1].split('.csv')[0]
-        top_feature_file = os.path.join(feature_folder, f'{data_name}.npy')
-        top_feature_array = np.load(top_feature_file, allow_pickle=True)[:, :, 0::2, :].astype('float32')
+    save_path = os.path.join(out_dir, 'docking_predictions.npy')
 
-        model_path_temp = os.path.join(all_model_folder, f'{data_name[0:4]}.data_train*')
-        model_p = glob.glob(model_path_temp)[0]
-
-        save_path = os.path.join(save_folder, f'{data_name[0:4]}.predictions.npy')
-
-        get_predictions(
-            top_feature_array=top_feature_array,
-            test_label_file=label_f,
-            scaler_path=scaler_path,
-            model_path=model_p,
-            save_path=save_path,
-        )
+    results_dict = get_predictions(
+        top_feature_array=top_feature_array,
+        test_label_file=label_file,
+        scaler_path=scaler_path,
+        model_path=model_dir,
+        save_path=save_path,
+    )
     
+    print(results_dict)
     return None
 
 
 def main():
-    # get_predictions()
-    # main_get_predictions_for_scoring()
-    main_get_predictions_for_scoring_2020()
-    # main_get_predictions_for_docking()
-    return None
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--function',  type=str, default='docking', help='Specify which function to perform. \
+                        Options [docking, scoring, scoring_2020] correspond to functions main_get_predictions_for_docking(), \
+                        main_get_predictions_for_scoring(), and main_get_predictions_for_scoring_2020(), respectively.')
+    parser.add_argument('--feature_dir', type=str, required=True, help='Path to directory containing featurized data as .npy files.')
+    parser.add_argument('--scaler_path', type=str, default='code_pkg/pretrain_data_standard_minmax_6channel_filtration50-12.sav')
+    parser.add_argument('--model_dir', type=str, default='saved_model_last_4w', help='Path to pretrained model dir')
+    parser.add_argument('--label_file', type=str, required=True, help='Path to label file with column 0 as id (e.g., pdbid) and column 1 as binding_energy.')
+    parser.add_argument('-o', '--outdir', type=str, default='outputs', help='Path to output directory.')
+    args = parser.parse_args()
+    
+    if args.function == 'docking':
+        get_predictions_for_docking(args.feature_dir, args.scaler_path, args.model_dir, args.label_file, args.outdir)
+    elif args.function == 'scoring':
+        main_get_predictions_for_scoring()
+    elif args.function == 'scoring_2020':
+        main_get_predictions_for_scoring_2020()
+    else:
+        raise RuntimeError(f'Unsupported input for --function: {args.function}. Supported options are "docking", "scoring", and "scoring_2020"')
 
 
 if __name__ == "__main__":
