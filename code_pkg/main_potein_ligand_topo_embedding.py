@@ -5,6 +5,7 @@ import sys
 import argparse
 import shutil
 import glob
+import time
 
 from top_embedding import SimplicialComplex_laplacian
 
@@ -300,6 +301,7 @@ def parse_args(args):
 
 
 def main():
+    t0 = time.time()
     args = parse_args(sys.argv[1:])
     generate_lap_features(
         output_feature_folder=args.output_feature_folder,
@@ -313,7 +315,9 @@ def main():
         ele_scheme=args.ele_scheme,
         ligand_file_type=args.ligand_file_type,
     )
-    return None
+    t_prep = time.time() - t0
+    print(t_prep)
+    return t_prep
 
 
 if __name__ == "__main__":
