@@ -14,13 +14,18 @@ module load Miniforge3
 conda activate topoformer
 
 BASE_DIR="/mnt/scratch/jeaves/TopoFormer"
+
+# This code can easily be modified to use a csv that contains paths to protein pocket (pdb) and ligand (mol2) files
 CSV_PATH="${BASE_DIR}/casf2016_smiles_seqs_cleaned.csv"
-# LABELS="${BASE_DIR}/test2016.csv"
+
 OUT_CSV="${BASE_DIR}/casf2016-pocket0_TopoFormer_preds_and_times.csv"
 
 echo "pdbid,pK_predicted,t_prep_s,t_inf_s" > "$OUT_CSV"
 
+# while IFS=',' read -r sample_id protein ligand || [[ -n "$sample_id" ]]; do
 while IFS=',' read -r pdbid smiles sequence || [[ -n "$pdbid" ]]; do
+    # If using sample_id, protein, ligand type CSV 
+    # comment out this block...
     pdbid="${pdbid//$'\r'/}"
     pdbid="${pdbid//\"/}"
     pdbid="$(echo "$pdbid" | xargs)"
@@ -28,12 +33,20 @@ while IFS=',' read -r pdbid smiles sequence || [[ -n "$pdbid" ]]; do
     pdb_dir="${BASE_DIR}/coreset/${pdbid}"
     protein="${pdb_dir}/${pdbid}_pocket.pdb"
     ligand="${pdb_dir}/${pdbid}_ligand.mol2"
+    # ... to here
 
+    # Also add this and specify what dir for graphs to save
+    # feat_dir="..."
+
+    # And swap the commented out line for the one below it here...
+    # t_prep=$(python3 code_pkg/main_potein_ligand_topo_embedding.py --protein_file "$protein" --ligand_file "$ligand" --output_feature_folder "$feat_dir" | tail -1)
     t_prep=$(python3 code_pkg/main_potein_ligand_topo_embedding.py --protein_file "$protein" --ligand_file "$ligand" --output_feature_folder "$pdb_dir" | tail -1)
 
     echo "${t_prep}"
 
-    py_out=$(python3 code_pkg/final_topt_regression_prediction.py --feature_dir "${BASE_DIR}/graphs_pocket" --sample_id "${pdbid}" --model_dir home/chendo11/workfolder/TopTransformer/Output_dir/shared_finetuned_model_casf_2016_at_11212025/model_cls_0)
+    # And swap the commented out line for the one below it here...
+    # py_out=$(python3 code_pkg/final_topt_regression_prediction.py --feature_dir "${pdb_dir}" --sample_id "${sample_id}" --model_dir home/chendo11/workfolder/TopTransformer/Output_dir/shared_finetuned_model_casf_2016_at_11212025/model_cls_0)
+    py_out=$(python3 code_pkg/final_topt_regression_prediction.py --feature_dir "${pdb_dir}" --sample_id "${pdbid}" --model_dir home/chendo11/workfolder/TopTransformer/Output_dir/shared_finetuned_model_casf_2016_at_11212025/model_cls_0)
     pk=$(echo "$py_out" | awk '{print $1}')
     t_inf=$(echo "$py_out" | awk '{print $2}')
 
